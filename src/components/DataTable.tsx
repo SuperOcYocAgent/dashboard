@@ -1,3 +1,4 @@
+"use client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -27,6 +28,16 @@ const statusColors: Record<string, string> = {
   pending: "bg-blue-500/20 text-blue-400",
 };
 
+function formatTime(dateString: string): string {
+  const date = new Date(dateString);
+  return date.toLocaleTimeString('en-US', { 
+    hour: '2-digit', 
+    minute: '2-digit',
+    hour12: false,
+    timeZone: 'UTC'
+  }) + ' UTC';
+}
+
 export function DataTable({ data }: DataTableProps) {
   return (
     <Card className="bg-card border-border/50">
@@ -47,7 +58,7 @@ export function DataTable({ data }: DataTableProps) {
             {data.map((item) => (
               <TableRow key={item.id} className="border-border/30 hover:bg-muted/30 transition-colors">
                 <TableCell className="text-muted-foreground text-sm">
-                  {new Date(item.timestamp).toLocaleTimeString()}
+                  {formatTime(item.timestamp)}
                 </TableCell>
                 <TableCell className="text-foreground capitalize">{item.type}</TableCell>
                 <TableCell className="text-foreground">{item.title}</TableCell>

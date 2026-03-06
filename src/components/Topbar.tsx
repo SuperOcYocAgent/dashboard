@@ -12,7 +12,13 @@ export function Topbar({ onMenuClick }: TopbarProps) {
     <header className="sticky top-0 z-30 h-16 bg-background/80 backdrop-blur-md border-b border-border/50">
       <div className="flex items-center justify-between h-full px-4 lg:px-6 gap-4">
         <div className="flex items-center gap-4">
-          <h1 className="text-lg lg:text-xl font-semibold text-foreground ml-10 lg:ml-0">Dashboard</h1>
+          <button 
+            onClick={onMenuClick}
+            className="lg:hidden p-2 -ml-2 rounded-lg hover:bg-muted"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <h1 className="text-lg lg:text-xl font-semibold text-foreground">Dashboard</h1>
         </div>
 
         <div className="flex items-center gap-2 lg:gap-4 flex-1 lg:flex-none justify-end">

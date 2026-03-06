@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-// Tickers que menciona el Yonki
 const YONKI_TICKERS = [
   { symbol: "NVDA", name: "NVIDIA", source: "yonki" },
   { symbol: "GOOGL", name: "Alphabet", source: "yonki" },
@@ -36,114 +35,75 @@ const ETFs = [
 
 async function getStockPrice(symbol: string): Promise<{ price: number; change: number; changePercent: number } | null> {
   try {
-    const res = await fetch(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`,
-      { next: { revalidate: 60 } }
-    );
+    // Prefer quote endpoint (more reliable intraday change)
+    const q = await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${symbol}`, { next: { revalidate: 60 } });
+    const qj = await q.json();
+    const item = qj?.quoteResponse?.result?.[0];
+
+    if (item?.regularMarketPrice != null) {
+      const price = Number(item.regularMarketPrice) || 0;
+      const change = Number(item.regularMarketChange) || 0;
+      const changePercent = Number(item.regularMarketChangePercent) || 0;
+      return { price, change, changePercent };
+    }
+
+    // Fallback to chart endpoint
+    const res = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=5d`, { next: { revalidate: 60 } });
     const data = await res.json();
-    
-    if (!data.chart?.result?.[0]) return null;
-    
-    const result = data.chart.result[0];
-    const meta = result.meta;
-    const quote = result.indicators?.quote?.[0];
-    
-    if (!meta?.regularMarketPrice || !quote?.close?.length) return null;
-    
-    const currentPrice = meta.regularMarketPrice;
-    const previousClose = meta.previousClose || quote.close[quote.close.length - 2];
-    const change = currentPrice - previousClose;
-    const changePercent = (change / previousClose) * 100;
-    
-    return {
-      price: currentPrice,
-      change,
-      changePercent,
-    };
-  } catch (error) {
-    console.error(`Error fetching ${symbol}:`, error);
+    const result = data?.chart?.result?.[0];
+    const meta = result?.meta;
+    if (!meta?.regularMarketPrice || !meta?.previousClose) return null;
+
+    const price = Number(meta.regularMarketPrice) || 0;
+    const prev = Number(meta.previousClose) || 0;
+    const change = price - prev;
+    const changePercent = prev ? (change / prev) * 100 : 0;
+    return { price, change, changePercent };
+  } catch {
     return null;
   }
 }
 
-async function getCryptoPrices(): Promise<any[]> {
+async function getCryptoPrices() {
   try {
     const ids = CRYPTO.map(c => c.id).join(",");
-    const res = await fetch(
-      `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`,
-      { next: { revalidate: 60 } }
-    );
+    const res = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`, { next: { revalidate: 60 } });
     const data = await res.json();
-    
     return CRYPTO.map(crypto => {
       const price = data[crypto.id]?.usd || 0;
       const changePercent = data[crypto.id]?.usd_24h_change || 0;
       const change = price * (changePercent / 100);
-      
-      return {
-        symbol: crypto.symbol,
-        name: crypto.name,
-        price,
-        change,
-        changePercent,
-        source: crypto.source,
-      };
+      return { symbol: crypto.symbol, name: crypto.name, price, change, changePercent, source: crypto.source };
     });
-  } catch (error) {
-    console.error("Error fetching crypto:", error);
+  } catch {
     return [];
   }
 }
 
 export async function GET() {
   try {
-    // Fetch stock prices in parallel
-    const stockPromises = [...MAGNIFICENT_7, ...YONKI_TICKERS.filter(y => !MAGNIFICENT_7.find(m => m.symbol === y.symbol))].map(async (stock) => {
-      const data = await getStockPrice(stock.symbol);
-      return {
-        symbol: stock.symbol,
-        name: stock.name,
-        price: data?.price || 0,
-        change: data?.change || 0,
-        changePercent: data?.changePercent || 0,
-        source: stock.source,
-      };
+    const stockUniverse = [...MAGNIFICENT_7, ...YONKI_TICKERS.filter(y => !MAGNIFICENT_7.find(m => m.symbol === y.symbol))];
+
+    const stockPromises = stockUniverse.map(async (stock) => {
+      const d = await getStockPrice(stock.symbol);
+      return { symbol: stock.symbol, name: stock.name, price: d?.price || 0, change: d?.change || 0, changePercent: d?.changePercent || 0, source: stock.source };
     });
 
     const etfPromises = ETFs.map(async (etf) => {
-      const data = await getStockPrice(etf.symbol);
-      return {
-        symbol: etf.symbol,
-        name: etf.name,
-        price: data?.price || 0,
-        change: data?.change || 0,
-        changePercent: data?.changePercent || 0,
-        source: etf.source,
-      };
+      const d = await getStockPrice(etf.symbol);
+      return { symbol: etf.symbol, name: etf.name, price: d?.price || 0, change: d?.change || 0, changePercent: d?.changePercent || 0, source: etf.source };
     });
 
-    const [stocks, etfs, crypto] = await Promise.all([
-      Promise.all(stockPromises),
-      Promise.all(etfPromises),
-      getCryptoPrices(),
-    ]);
-
-    // Portfolio demo
-    const portfolio = {
-      totalValue: 125750.00,
-      dayChange: 2340.50,
-      dayChangePercent: 1.90,
-    };
+    const [stocks, etfs, crypto] = await Promise.all([Promise.all(stockPromises), Promise.all(etfPromises), getCryptoPrices()]);
 
     return NextResponse.json({
       stocks,
       etfs,
       crypto,
-      portfolio,
+      portfolio: { totalValue: 125750.0, dayChange: 2340.5, dayChangePercent: 1.9 },
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error("Finance API error:", error);
     return NextResponse.json({ error: "Failed to fetch finance data" }, { status: 500 });
   }
 }

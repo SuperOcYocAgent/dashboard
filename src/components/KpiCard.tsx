@@ -10,7 +10,7 @@ interface KpiCardProps {
 
 export function KpiCard({ title, value, change, trend }: KpiCardProps) {
   return (
-    <Card className="bg-card border-border/50 transition-all duration-200 hover:border-border hover:shadow-lg hover:shadow-primary/5">
+    <Card className="bg-card border-border/50 transition-all duration-200 hover:border-border hover:shadow-lg hover:shadow-primary/5 hover:scale-[1.02] cursor-pointer">">
       <CardContent className="p-4 lg:p-6">
         <p className="text-sm text-muted-foreground mb-1">{title}</p>
         <div className="flex items-end justify-between">

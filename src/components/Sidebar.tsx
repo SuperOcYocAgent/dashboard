@@ -1,23 +1,28 @@
 "use client";
 import { useState } from "react";
+import { useSidebar } from "@/context/SidebarContext";
 import { 
   LayoutDashboard, 
   BarChart3, 
   Settings, 
   ChevronLeft,
   Menu,
-  X
+  X,
+  Bot,
+  Landmark
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const items = [
   { label: "Overview", icon: LayoutDashboard, href: "/dashboard" },
+  { label: "OpenClaw", icon: Bot, href: "/openclaw" },
+  { label: "Finance", icon: Landmark, href: "/finance" },
   { label: "Analytics", icon: BarChart3, href: "/dashboard/analytics" },
   { label: "Settings", icon: Settings, href: "/dashboard/settings" },
 ];
 
 export function Sidebar() {
-  const [collapsed, setCollapsed] = useState(false);
+  const { collapsed, setCollapsed } = useSidebar();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
@@ -41,14 +46,9 @@ export function Sidebar() {
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed lg:relative z-40 h-screen bg-card border-r border-border/50 transition-all duration-300",
-          // Mobile: slide in from left
-          "lg:translate-x-0",
+          "fixed top-0 left-0 h-screen bg-card border-r border-border/50 transition-all duration-300 z-40",
           mobileOpen ? "translate-x-0 w-64" : "-translate-x-full lg:translate-x-0",
-          // Collapsed on desktop
-          collapsed && !mobileOpen ? "lg:w-16" : "lg:w-64",
-          // Always full width on mobile when open
-          "w-64"
+          collapsed && !mobileOpen ? "lg:w-16" : "lg:w-64 w-64"
         )}
       >
         <div className="flex flex-col h-full">

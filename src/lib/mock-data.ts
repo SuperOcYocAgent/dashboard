@@ -25,9 +25,23 @@ export const sourcesData = [
   { source: "Email", value: 120 },
 ];
 
-export const updatesData = Array.from({ length: 10 }, (_, i) => ({
+// Static timestamps to avoid hydration mismatch
+const staticTimestamps = [
+  "2026-03-03T14:00:00Z",
+  "2026-03-03T13:00:00Z",
+  "2026-03-03T12:00:00Z",
+  "2026-03-03T11:00:00Z",
+  "2026-03-03T10:00:00Z",
+  "2026-03-03T09:00:00Z",
+  "2026-03-03T08:00:00Z",
+  "2026-03-03T07:00:00Z",
+  "2026-03-03T06:00:00Z",
+  "2026-03-03T05:00:00Z",
+];
+
+export const updatesData = staticTimestamps.map((timestamp, i) => ({
   id: i + 1,
-  timestamp: new Date(Date.now() - i * 3600000).toISOString(),
+  timestamp,
   type: ["deploy", "alert", "backup", "sync"][i % 4],
   title: [
     "Deployment completed",

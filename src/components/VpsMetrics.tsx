@@ -30,10 +30,10 @@ function MetricCard({
   icon: Icon, 
   color 
 }: { 
-  title: string; 
-  value: string?: string; 
-; 
-  subtitle  icon: any; 
+  title: string;
+  value?: string;
+  subtitle?: string;
+  icon: any;
   color: string;
 }) {
   return (
