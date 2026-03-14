@@ -1,0 +1,31 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model SavedJob {
+  id          String    @id @default(cuid())
+  externalId  String?   // ID from the job search ( Brave )
+  title       String
+  company     String
+  location    String?
+  salary      String?
+  type        String?
+  source      String
+  url         String
+  description String?
+  tags        String?   // JSON array stored as string
+  createdAt   DateTime  @default(now())
+  
+  // Custom fields
+  notes       String?
+  estimatedHours Int?
+  score       Int?      // 1-5
+  status      String    @default("interested") // interested, applied, rejected, interview
+  
+  @@index([status])
+  @@index([score])
+}
