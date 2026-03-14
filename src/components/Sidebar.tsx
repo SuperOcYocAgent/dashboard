@@ -9,13 +9,15 @@ import {
   Menu,
   X,
   Bot,
-  Landmark
+  Landmark,
+  Briefcase
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const items = [
   { label: "Overview", icon: LayoutDashboard, href: "/dashboard" },
   { label: "OpenClaw", icon: Bot, href: "/openclaw" },
+  { label: "Jobs", icon: Briefcase, href: "/jobs" },
   { label: "Finance", icon: Landmark, href: "/finance" },
   { label: "Analytics", icon: BarChart3, href: "/dashboard/analytics" },
   { label: "Settings", icon: Settings, href: "/dashboard/settings" },
