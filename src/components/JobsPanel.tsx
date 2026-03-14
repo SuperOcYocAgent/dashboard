@@ -17,29 +17,31 @@ export interface Job {
   source: string;
   url: string;
   description?: string;
-  // Saved job fields
   notes?: string;
   estimatedHours?: number;
   score?: number;
   status?: string;
   createdAt?: string;
+  isSaved?: boolean;
 }
 
-const sources = ["All", "Remote OK", "We Work Remotely", "Indeed", "Working Nomads", "Turing", "Built In", "Jooble"];
-const jobTypes = ["All", "Full-time", "Contract", "Part-time"];
-const statuses = ["interested", "applied", "interview", "rejected"];
+export interface JobSource {
+  id: string;
+  name: string;
+  enabled: boolean;
+}
 
 export function JobsPanel() {
   const [searchJobs, setSearchJobs] = useState<Job[]>([]);
   const [savedJobs, setSavedJobs] = useState<Job[]>([]);
+  const [sources, setSources] = useState<JobSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
-  const [selectedSource, setSelectedSource] = useState("All");
-  const [selectedType, setSelectedType] = useState("All");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [activeTab, setActiveTab] = useState<"search" | "saved">("search");
   const [editingJob, setEditingJob] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ notes: "", estimatedHours: 0, score: 0, status: "interested" });
+  const [sourcesLoading, setSourcesLoading] = useState(false);
 
   const fetchSearchJobs = async () => {
     setLoading(true);
@@ -48,8 +50,8 @@ export function JobsPanel() {
       const data = await response.json();
       
       if (data.jobs) {
-        const transformedJobs: Job[] = data.jobs.map((job: any, index: number) => ({
-          id: `search-${index}`,
+        const transformedJobs: Job[] = data.jobs.map((job: any) => ({
+          id: job.id,
           title: job.title,
           company: job.company,
           location: job.location || "Remote",
@@ -60,6 +62,7 @@ export function JobsPanel() {
           source: job.source || "Search",
           url: job.url,
           description: job.description,
+          isSaved: job.isSaved,
         }));
         setSearchJobs(transformedJobs);
         setLastUpdated(new Date());
@@ -68,6 +71,43 @@ export function JobsPanel() {
       console.error("Failed to fetch jobs:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchSources = async () => {
+    try {
+      const response = await fetch("/api/jobs/sources");
+      const data = await response.json();
+      if (data.sources) {
+        setSources(data.sources);
+      }
+    } catch (error) {
+      console.error("Failed to fetch sources:", error);
+    }
+  };
+
+  const updateSource = async (sourceName: string, enabled: boolean) => {
+    setSourcesLoading(true);
+    try {
+      const updatedSources = sources.map(s => 
+        s.name === sourceName ? { ...s, enabled } : s
+      );
+      setSources(updatedSources);
+      
+      await fetch("/api/jobs/sources", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sources: updatedSources }),
+      });
+      
+      // Refresh jobs after source change
+      await fetchSearchJobs();
+    } catch (error) {
+      console.error("Failed to update source:", error);
+      // Revert on error
+      await fetchSources();
+    } finally {
+      setSourcesLoading(false);
     }
   };
 
@@ -94,6 +134,7 @@ export function JobsPanel() {
           score: job.score,
           status: job.status,
           createdAt: job.createdAt,
+          isSaved: true,
         }));
         setSavedJobs(jobs);
       }
@@ -109,6 +150,7 @@ export function JobsPanel() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          externalId: job.id,
           title: job.title,
           company: job.company,
           location: job.location,
@@ -122,6 +164,10 @@ export function JobsPanel() {
       });
       
       if (response.ok) {
+        // Update the job's isSaved status locally
+        setSearchJobs(prev => prev.map(j => 
+          j.url === job.url ? { ...j, isSaved: true } : j
+        ));
         await fetchSavedJobs();
         setActiveTab("saved");
       }
@@ -152,11 +198,15 @@ export function JobsPanel() {
     }
   };
 
-  const deleteJob = async (id: string) => {
+  const deleteJob = async (id: string, url: string) => {
     if (!confirm("Are you sure you want to delete this job?")) return;
     
     try {
       await fetch(`/api/jobs/saved/${id}`, { method: "DELETE" });
+      // Update local state
+      setSearchJobs(prev => prev.map(j => 
+        j.url === url ? { ...j, isSaved: false } : j
+      ));
       await fetchSavedJobs();
     } catch (error) {
       console.error("Failed to delete job:", error);
@@ -173,10 +223,6 @@ export function JobsPanel() {
     });
   };
 
-  const isJobSaved = (url: string) => {
-    return savedJobs.some(j => j.url === url);
-  };
-
   const extractTags = (text: string): string[] => {
     const techTags = [".NET", "C#", "React", "Node.js", "Angular", "TypeScript", "PostgreSQL", "AWS", "Azure", "Docker", "JavaScript", "Python"];
     return techTags.filter(tag => 
@@ -185,17 +231,18 @@ export function JobsPanel() {
   };
 
   useEffect(() => {
+    fetchSources();
     fetchSearchJobs();
     fetchSavedJobs();
   }, []);
 
-  const filteredSearchJobs = searchJobs.filter(job => {
-    const sourceMatch = selectedSource === "All" || job.source.includes(selectedSource);
-    const typeMatch = selectedType === "All" || job.type === selectedType;
-    return sourceMatch && typeMatch;
-  });
+  const enabledSources = sources.filter(s => s.enabled).map(s => s.name);
 
-  const renderStars = (currentScore: number, jobId: string, isEditing: boolean) => {
+  const filteredSearchJobs = searchJobs.filter(job => 
+    enabledSources.includes(job.source)
+  );
+
+  const renderStars = (currentScore: number, isEditing: boolean) => {
     if (isEditing) {
       return (
         <div className="flex gap-1">
@@ -246,7 +293,7 @@ export function JobsPanel() {
             onClick={() => setActiveTab("search")}
             size="sm"
           >
-            <Search className="w-4 h-4 mr-2" />
+            <SearchIcon className="w-4 h-4 mr-2" />
             Search
           </Button>
           <Button 
@@ -262,148 +309,143 @@ export function JobsPanel() {
 
       {activeTab === "search" && (
         <>
+          {/* Sources Filter */}
+          <div className="border border-border/50 rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Filter className="w-4 h-4 text-muted-foreground" />
+              <span className="text-sm font-medium">Sources:</span>
+              {sourcesLoading && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {sources.map((source) => (
+                <button
+                  key={source.id}
+                  onClick={() => updateSource(source.name, !source.enabled)}
+                  disabled={sourcesLoading}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-all ${
+                    source.enabled 
+                      ? "bg-primary text-primary-foreground" 
+                      : "bg-muted text-muted-foreground hover:bg-muted/80"
+                  }`}
+                >
+                  <div className={`w-4 h-4 rounded border flex items-center justify-center ${
+                    source.enabled 
+                      ? "bg-primary-foreground/20 border-primary-foreground" 
+                      : "border-muted-foreground"
+                  }`}>
+                    {source.enabled && <Check className="w-3 h-3" />}
+                  </div>
+                  {source.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Search Header */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <Button 
               onClick={fetchSearchJobs} 
-              disabled={loading}
+              disabled={loading || sourcesLoading}
             >
               <RefreshCw className={`w-4 h-4 mr-2 ${loading ? "animate-spin" : ""}`} />
               {loading ? "Searching..." : "Refresh Jobs"}
             </Button>
-          </div>
-
-          {/* Filters */}
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Filters:</span>
+            <div className="text-sm text-muted-foreground">
+              Showing {filteredSearchJobs.length} jobs from {enabledSources.length} source{enabledSources.length !== 1 ? "s" : ""}
             </div>
-            <select 
-              value={selectedSource}
-              onChange={(e) => setSelectedSource(e.target.value)}
-              className="bg-card border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              {sources.map(source => (
-                <option key={source} value={source}>{source}</option>
-              ))}
-            </select>
-            <select 
-              value={selectedType}
-              onChange={(e) => setSelectedType(e.target.value)}
-              className="bg-card border border-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              {jobTypes.map(type => (
-                <option key={type} value={type}>{type}</option>
-              ))}
-            </select>
-          </div>
-
-          {/* Results count */}
-          <div className="text-sm text-muted-foreground">
-            Showing {filteredSearchJobs.length} job{filteredSearchJobs.length !== 1 ? "s" : ""}
           </div>
 
           {/* Jobs Table */}
-          <div className="border border-border/50 rounded-xl overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-muted/50 border-b border-border/50">
-                    <th className="text-left p-4 text-sm font-medium text-muted-foreground">Job</th>
-                    <th className="text-left p-4 text-sm font-medium text-muted-foreground hidden md:table-cell">Company</th>
-                    <th className="text-left p-4 text-sm font-medium text-muted-foreground hidden lg:table-cell">Location</th>
-                    <th className="text-left p-4 text-sm font-medium text-muted-foreground hidden sm:table-cell">Salary</th>
-                    <th className="text-left p-4 text-sm font-medium text-muted-foreground">Type</th>
-                    <th className="text-left p-4 text-sm font-medium text-muted-foreground">Source</th>
-                    <th className="text-center p-4 text-sm font-medium text-muted-foreground">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredSearchJobs.map((job, index) => (
-                    <tr 
-                      key={job.id} 
-                      className="border-b border-border/30 hover:bg-muted/30 transition-colors animate-in fade-in"
-                      style={{ animationDelay: `${index * 30}ms` }}
-                    >
-                      <td className="p-4">
-                        <div className="font-medium text-foreground">{job.title}</div>
-                        <div className="hidden md:flex flex-wrap gap-1 mt-1">
-                          {job.tags.map(tag => (
-                            <span key={tag} className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="p-4 text-sm text-muted-foreground hidden md:table-cell">
-                        {job.company}
-                      </td>
-                      <td className="p-4 text-sm text-muted-foreground hidden lg:table-cell">
-                        <div className="flex items-center gap-1">
-                          <MapPin className="w-3 h-3" />
-                          {job.location}
-                        </div>
-                      </td>
-                      <td className="p-4 text-sm text-muted-foreground hidden sm:table-cell">
-                        <div className="flex items-center gap-1">
-                          <DollarSign className="w-3 h-3" />
-                          {job.salary}
-                        </div>
-                      </td>
-                      <td className="p-4 text-sm">
-                        <span className={`px-2 py-1 rounded text-xs ${
-                          job.type === "Full-time" 
-                            ? "bg-green-500/10 text-green-500" 
-                            : job.type === "Contract"
-                            ? "bg-yellow-500/10 text-yellow-500"
-                            : "bg-blue-500/10 text-blue-500"
-                        }`}>
-                          {job.type}
-                        </span>
-                      </td>
-                      <td className="p-4 text-sm text-muted-foreground">
-                        <span className="bg-secondary text-secondary-foreground px-2 py-1 rounded text-xs">
-                          {job.source}
-                        </span>
-                      </td>
-                      <td className="p-4">
-                        <div className="flex items-center gap-1 justify-center">
-                          <a
-                            href={job.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
-                          >
-                            <ExternalLink className="w-4 h-4" />
-                          </a>
-                          <Button
-                            variant={isJobSaved(job.url) ? "secondary" : "outline"}
-                            size="icon"
-                            onClick={() => !isJobSaved(job.url) && saveJob(job)}
-                            disabled={saving === job.id || isJobSaved(job.url)}
-                            title={isJobSaved(job.url) ? "Already saved" : "Save job"}
-                          >
-                            {saving === job.id ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Bookmark className={`w-4 h-4 ${isJobSaved(job.url) ? "fill-current" : ""}`} />
-                            )}
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {filteredSearchJobs.length === 0 && !loading ? (
+            <div className="text-center py-12 text-muted-foreground">
+              <Briefcase className="w-12 h-12 mx-auto mb-4 opacity-50" />
+              <p>No jobs found. Try enabling more sources.</p>
             </div>
-          </div>
+          ) : (
+            <div className="border border-border/50 rounded-xl overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-muted/50 border-b border-border/50">
+                      <th className="text-left p-4 text-sm font-medium text-muted-foreground">Job</th>
+                      <th className="text-left p-4 text-sm font-medium text-muted-foreground hidden md:table-cell">Source</th>
+                      <th className="text-left p-4 text-sm font-medium text-muted-foreground hidden lg:table-cell">Location</th>
+                      <th className="text-left p-4 text-sm font-medium text-muted-foreground">Posted</th>
+                      <th className="text-center p-4 text-sm font-medium text-muted-foreground">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredSearchJobs.map((job, index) => (
+                      <tr 
+                        key={job.id} 
+                        className="border-b border-border/30 hover:bg-muted/30 transition-colors animate-in fade-in"
+                        style={{ animationDelay: `${index * 30}ms` }}
+                      >
+                        <td className="p-4">
+                          <div className="font-medium text-foreground">{job.title}</div>
+                          <div className="text-xs text-muted-foreground">{job.company}</div>
+                          <div className="hidden md:flex flex-wrap gap-1 mt-1">
+                            {job.tags.map(tag => (
+                              <span key={tag} className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="p-4 text-sm text-muted-foreground hidden md:table-cell">
+                          <span className="bg-secondary text-secondary-foreground px-2 py-1 rounded text-xs">
+                            {job.source}
+                          </span>
+                        </td>
+                        <td className="p-4 text-sm text-muted-foreground hidden lg:table-cell">
+                          <div className="flex items-center gap-1">
+                            <MapPin className="w-3 h-3" />
+                            {job.location}
+                          </div>
+                        </td>
+                        <td className="p-4 text-sm text-muted-foreground">
+                          <div className="flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            {job.posted}
+                          </div>
+                        </td>
+                        <td className="p-4">
+                          <div className="flex items-center gap-1 justify-center">
+                            <a
+                              href={job.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+                            >
+                              <ExternalLink className="w-4 h-4" />
+                            </a>
+                            <Button
+                              variant={job.isSaved ? "secondary" : "outline"}
+                              size="icon"
+                              onClick={() => !job.isSaved && saveJob(job)}
+                              disabled={saving === job.id || job.isSaved}
+                              title={job.isSaved ? "Already saved" : "Save job"}
+                            >
+                              {saving === job.id ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Bookmark className={`w-4 h-4 ${job.isSaved ? "fill-current" : ""}`} />
+                              )}
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </>
       )}
 
       {activeTab === "saved" && (
         <>
-          {/* Saved Jobs */}
           {savedJobs.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <Bookmark className="w-12 h-12 mx-auto mb-4 opacity-50" />
@@ -445,7 +487,7 @@ export function JobsPanel() {
                           </div>
                         </td>
                         <td className="p-4 hidden md:table-cell">
-                          {renderStars(job.score || 0, job.id, editingJob === job.id)}
+                          {renderStars(job.score || 0, editingJob === job.id)}
                         </td>
                         <td className="p-4 text-sm hidden sm:table-cell">
                           {editingJob === job.id ? (
@@ -467,9 +509,10 @@ export function JobsPanel() {
                               onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
                               className="bg-card border border-border rounded-lg px-2 py-1 text-sm"
                             >
-                              {statuses.map(s => (
-                                <option key={s} value={s}>{s}</option>
-                              ))}
+                              <option value="interested">interested</option>
+                              <option value="applied">applied</option>
+                              <option value="interview">interview</option>
+                              <option value="rejected">rejected</option>
                             </select>
                           ) : (
                             <span className={`px-2 py-1 rounded text-xs ${
@@ -518,7 +561,7 @@ export function JobsPanel() {
                                 <Button size="icon" variant="outline" onClick={() => startEditing(job)}>
                                   <Edit2 className="w-4 h-4" />
                                 </Button>
-                                <Button size="icon" variant="ghost" onClick={() => deleteJob(job.id)}>
+                                <Button size="icon" variant="ghost" onClick={() => deleteJob(job.id, job.url)}>
                                   <Trash2 className="w-4 h-4 text-red-500" />
                                 </Button>
                               </>
@@ -545,7 +588,7 @@ export function JobsPanel() {
   );
 }
 
-function Search(props: any) {
+function SearchIcon(props: any) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
       <circle cx="11" cy="11" r="8"/>
